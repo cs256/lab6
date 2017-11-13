@@ -1,2 +1,2 @@
 # lab6
-Design patterns
+Functors and applicative functors
