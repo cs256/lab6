@@ -22,27 +22,27 @@ parse (MkParser f) xs = f xs
 -- if the first character in the input satisfies the predicate.
 ch :: (Char -> Bool) -> Parser Char
 ch p = MkParser $ \xs -> case xs of
-    (y:ys) | p y -> undefined
-    _            -> undefined
+    (y:ys) | p y -> Just (y, ys)
+    _            -> Nothing
 
 --------------------------------------------------------------------------------
 -- Parsers are functors
 
 instance Functor Parser where
     fmap f (MkParser g) =
-        MkParser $ \xs -> undefined
+        MkParser $ \xs -> fmap (\(x,ys) -> (f x, ys)) (g xs)
 
 --------------------------------------------------------------------------------
 -- Parsers are applicative functors
 
 instance Applicative Parser where
-    pure x = undefined
+    pure x = MkParser $ \xs -> Just (x, xs)
 
-    (MkParser a) <*> p = MkParser (\xs -> case a xs of
-        Nothing      -> undefined
+    (MkParser a) <*> p = MkParser $ \xs -> case a xs of
+        Nothing      -> Nothing
         Just (f, ys) -> let (MkParser b) = p in case b ys of
-            Nothing      -> undefined
-            Just (x, zs) -> undefined)
+            Nothing      -> Nothing
+            Just (x, zs) -> Just (f x, zs)
 
 --------------------------------------------------------------------------------
 -- Alternative
@@ -59,10 +59,18 @@ class Applicative f => Alternative f where
     many p = some p <|> pure []
 
 instance Alternative Parser where
-    empty = undefined
+    empty = MkParser (const Nothing)
 
     (MkParser a) <|> (MkParser b) =
-        undefined
+        MkParser $ \xs -> case a xs of
+            Just r  -> Just r
+            Nothing -> b xs
+
+    many (MkParser p) = MkParser go
+        where go xs = case p xs of
+                Nothing     -> Just ([],xs)
+                Just (r,ys) -> let Just (rs,zs) = go ys
+                               in Just (r:rs, zs)
 
 --------------------------------------------------------------------------------
 
@@ -79,10 +87,10 @@ whitespace :: Parser String
 whitespace = many (oneOf [' ', '\t', '\n', '\r'])
 
 token :: Parser a -> Parser a
-token p = undefined
+token p = whitespace *> p
 
 between :: Parser open -> Parser close -> Parser a -> Parser a
-between open close p = undefined
+between open close p = open *> p <* close
 
 --------------------------------------------------------------------------------
 
@@ -100,13 +108,13 @@ eval (Add l r) = eval l + eval r
 --------------------------------------------------------------------------------
 
 lparen :: Parser Char
-lparen = undefined
+lparen = token $ ch (=='(')
 
 rparen :: Parser Char
-rparen = undefined
+rparen = token $ ch (==')')
 
 plus :: Parser Char
-plus = undefined
+plus = token $ ch (=='+')
 
 val :: Parser Expr
 val = Val <$> token nat
@@ -117,7 +125,7 @@ add = between lparen rparen $
             <*> (plus *> token expr)
 
 expr :: Parser Expr
-expr = undefined
+expr = val <|> add
 
 parseAndEval :: String -> Maybe Integer
 parseAndEval xs = eval . fst <$> parse expr xs
